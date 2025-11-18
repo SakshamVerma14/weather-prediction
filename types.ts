@@ -1,35 +1,41 @@
-export type WeatherCondition =
-  | 'Sunny'
-  | 'Cloudy'
-  | 'Rainy'
-  | 'Snowy'
-  | 'Thunderstorm'
-  | 'Partly Cloudy'
-  | 'Humid' // Added for Mumbai
-  | 'Snowfall'
-  | 'Foggy'; // Added for Mumbai
+// src/types/index.ts
 
 export interface CurrentWeather {
   location: string;
   temperature: number;
-  condition: WeatherCondition;
+  condition: string;
   humidity: number;
   windSpeed: number;
   feelsLike: number;
 }
 
-export interface Forecast {
+export interface ForecastDay {
   day: string;
   high: number;
   low: number;
-  condition: WeatherCondition;
+  condition: string;
 }
 
-export type AlertType = 'Flood' | 'Earthquake' | 'Avalanche' | 'Heatwave'; // Added Heatwave
+export type AlertSeverity =
+  | 'Warning'
+  | 'Watch'
+  | 'Advisory'
+  | 'Info'
+  | 'Green'
+  | 'Orange'
+  | 'Red';
 
-export type AlertSeverity = 'Watch' | 'Warning' | 'Advisory';
+export type AlertType =
+  | 'Flood'
+  | 'Earthquake'
+  | 'Avalanche'
+  | 'Heatwave'
+  | 'Cyclone'
+  | 'Storm'
+  | 'Info'
+  | string;
 
-export interface Alert {
+export interface WeatherAlert {
   id: string;
   type: AlertType;
   severity: AlertSeverity;
@@ -40,6 +46,9 @@ export interface Alert {
 
 export interface WeatherData {
   current: CurrentWeather;
-  forecast: Forecast[];
-  alerts: Alert[];
+  forecast: ForecastDay[];
+  alerts: WeatherAlert[];
 }
+
+export type Forecast = ForecastDay;
+export type Alert = WeatherAlert;

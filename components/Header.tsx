@@ -1,23 +1,12 @@
 import React from 'react';
 import type { MockLocation } from '../services/weatherService';
+import { MOCK_LOCATION_OPTIONS } from '../services/weatherService';
 import { CloudIcon } from './icons';
 
 interface HeaderProps {
   selectedLocation: MockLocation;
   onLocationChange: (location: MockLocation) => void;
 }
-
-// ✅ Added new locations
-const locations: MockLocation[] = [
-  'Uttarakhand',
-  'Mumbai',
-  'Kashmir',
-  'Jaipur',
-  'Assam',
-  'Bihar',
-  'Punjab',              // 🆕 Added
-  'Himachal Pradesh',    // 🆕 Added
-];
 
 export const Header: React.FC<HeaderProps> = ({ selectedLocation, onLocationChange }) => {
   return (
@@ -35,7 +24,7 @@ export const Header: React.FC<HeaderProps> = ({ selectedLocation, onLocationChan
           onChange={(e) => onLocationChange(e.target.value as MockLocation)}
           className="bg-slate-700 border border-slate-600 text-slate-200 text-sm rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 block w-full p-2.5 appearance-none pr-8 cursor-pointer"
         >
-          {locations.map((loc) => (
+          {MOCK_LOCATION_OPTIONS.map((loc) => (
             <option key={loc} value={loc}>
               {loc}
             </option>

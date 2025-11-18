@@ -1,296 +1,424 @@
-import type { WeatherData } from '../types';
+// src/services/weatherService.ts
+import type { WeatherAlert, WeatherData, AlertSeverity } from '../types';
+import {
+  fetchWeatherData as fetchMockData,
+  MockLocation,
+  MOCK_WEATHER_DATA,
+} from './mockData';
+export type { MockLocation } from './mockData';
+import {
+  OPENWEATHER_CONFIG,
+  OPEN_METEO_CONFIG,
+  DISASTER_ALERT_CONFIG,
+} from '../config/apiConfig';
 
-export type MockLocation =
-  | 'Uttarakhand'
-  | 'Mumbai'
-  | 'Kashmir'
-  | 'Jaipur'
-  | 'Assam'
-  | 'Himachal Pradesh'
-  | 'Bihar'
-  | 'Kerala'
-  | 'Punjab'; // Added Punjab
+// ============================================
+// 1. REAL API SERVICE (OpenWeather + Others)
+// ============================================
 
-const mockData: Record<MockLocation, WeatherData> = {
-  'Uttarakhand': {
-    current: {
-      location: 'Uttarakhand, IN',
-      temperature: 18,
-      condition: 'Partly Cloudy',
-      humidity: 75,
-      windSpeed: 25,
-      feelsLike: 17,
-    },
-    forecast: [
-      { day: 'Mon', high: 20, low: 14, condition: 'Sunny' },
-      { day: 'Tue', high: 21, low: 15, condition: 'Sunny' },
-      { day: 'Wed', high: 19, low: 13, condition: 'Cloudy' },
-      { day: 'Thu', high: 18, low: 12, condition: 'Rainy' },
-      { day: 'Fri', high: 20, low: 14, condition: 'Partly Cloudy' },
-    ],
-    alerts: [
-      {
-        id: 'UK2024-1',
-        type: 'Earthquake',
-        severity: 'Warning',
-        title: 'Earthquake Warning: 6.8 Magnitude',
-        description:
-          'Strong seismic activity expected. Secure heavy items and prepare emergency kits.',
-        area: 'Uttarakhand Fault Lines',
-      },
-    ],
+const OPENWEATHER_API_KEY = OPENWEATHER_CONFIG.apiKey;
+const OPENWEATHER_BASE = OPENWEATHER_CONFIG.baseUrl;
+
+// Alternative: Open-Meteo (NO API KEY NEEDED!)
+const OPEN_METEO_BASE = OPEN_METEO_CONFIG.baseUrl;
+
+const normalizeLocationName = (name: string) => name.trim().toLowerCase();
+
+export const MOCK_LOCATION_OPTIONS: MockLocation[] = [
+  'Uttarakhand',
+  'Mumbai',
+  'Kashmir',
+  'Jaipur',
+  'Assam',
+  'Himachal Pradesh',
+  'Bihar',
+  'Kerala',
+  'Punjab',
+] as const;
+
+const mockLocationLookup: Record<string, MockLocation> = MOCK_LOCATION_OPTIONS.reduce(
+  (acc, loc) => {
+    acc[normalizeLocationName(loc)] = loc;
+    return acc;
   },
+  {} as Record<string, MockLocation>
+);
 
-  'Mumbai': {
-    current: {
-      location: 'Mumbai, IN',
-      temperature: 30,
-      condition: 'Humid',
-      humidity: 88,
-      windSpeed: 12,
-      feelsLike: 35,
-    },
-    forecast: [
-      { day: 'Mon', high: 32, low: 27, condition: 'Rainy' },
-      { day: 'Tue', high: 31, low: 26, condition: 'Rainy' },
-      { day: 'Wed', high: 30, low: 25, condition: 'Cloudy' },
-      { day: 'Thu', high: 32, low: 27, condition: 'Sunny' },
-      { day: 'Fri', high: 33, low: 28, condition: 'Humid' },
-    ],
-    alerts: [
-      {
-        id: 'MUM2024-1',
-        type: 'Flood',
-        severity: 'Watch',
-        title: 'Monsoon Flood Watch',
-        description:
-          'Heavy rainfall expected. Possible waterlogging in low-lying areas.',
-        area: 'Mumbai Metropolitan Region',
-      },
-    ],
-  },
+interface OpenWeatherResponse {
+  main: {
+    temp: number;
+    feels_like: number;
+    humidity: number;
+  };
+  weather: Array<{
+    main: string;
+    description: string;
+  }>;
+  wind: {
+    speed: number;
+  };
+  name: string;
+  sys: {
+    country: string;
+  };
+}
 
-  'Kashmir': {
-    current: {
-      location: 'Kashmir, IN',
-      temperature: 12,
-      condition: 'Snowfall',
-      humidity: 80,
-      windSpeed: 10,
-      feelsLike: 9,
-    },
-    forecast: [
-      { day: 'Mon', high: 10, low: 2, condition: 'Snowy' },
-      { day: 'Tue', high: 11, low: 1, condition: 'Cloudy' },
-      { day: 'Wed', high: 12, low: 0, condition: 'Snowy' },
-      { day: 'Thu', high: 13, low: 3, condition: 'Sunny' },
-      { day: 'Fri', high: 14, low: 5, condition: 'Partly Cloudy' },
-    ],
-    alerts: [
-      {
-        id: 'KASH2024-1',
-        type: 'Avalanche',
-        severity: 'Warning',
-        title: 'Avalanche Risk',
-        description:
-          'High avalanche danger in higher reaches. Avoid mountain travel.',
-        area: 'Gulmarg & Sonmarg',
-      },
-    ],
-  },
+interface OpenMeteoResponse {
+  current_weather: {
+    temperature: number;
+    windspeed: number;
+    weathercode: number;
+  };
+  hourly: {
+    temperature_2m: number[];
+    relativehumidity_2m: number[];
+  };
+}
 
-  'Jaipur': {
-    current: {
-      location: 'Jaipur, IN',
-      temperature: 28,
-      condition: 'Thunderstorm',
-      humidity: 92,
-      windSpeed: 30,
-      feelsLike: 32,
-    },
-    forecast: [
-      { day: 'Mon', high: 29, low: 24, condition: 'Thunderstorm' },
-      { day: 'Tue', high: 30, low: 25, condition: 'Rainy' },
-      { day: 'Wed', high: 31, low: 26, condition: 'Partly Cloudy' },
-      { day: 'Thu', high: 30, low: 25, condition: 'Sunny' },
-      { day: 'Fri', high: 29, low: 24, condition: 'Thunderstorm' },
-    ],
-    alerts: [
-      {
-        id: 'JP2024-1',
-        type: 'Heatwave',
-        severity: 'Advisory',
-        title: 'Extreme Heat Advisory',
-        description:
-          'Temperatures may rise above 42°C. Stay hydrated and avoid outdoor work.',
-        area: 'Jaipur & Surroundings',
-      },
-    ],
-  },
-
-  'Assam': {
-    current: {
-      location: 'Assam, IN',
-      temperature: 25,
-      condition: 'Rainy',
-      humidity: 90,
-      windSpeed: 15,
-      feelsLike: 28,
-    },
-    forecast: [
-      { day: 'Mon', high: 27, low: 22, condition: 'Rainy' },
-      { day: 'Tue', high: 28, low: 23, condition: 'Rainy' },
-      { day: 'Wed', high: 26, low: 21, condition: 'Cloudy' },
-      { day: 'Thu', high: 27, low: 22, condition: 'Rainy' },
-      { day: 'Fri', high: 28, low: 23, condition: 'Rainy' },
-    ],
-    alerts: [
-      {
-        id: 'ASM2024-1',
-        type: 'Flood',
-        severity: 'Warning',
-        title: 'Brahmaputra Flood Alert',
-        description:
-          'Rising water levels in Brahmaputra River. Evacuation may be needed in low-lying areas.',
-        area: 'Dispur & Nearby Villages',
-      },
-    ],
-  },
-
-  'Himachal Pradesh': {
-    current: {
-      location: 'Himachal Pradesh, IN',
-      temperature: 14,
-      condition: 'Foggy',
-      humidity: 82,
-      windSpeed: 10,
-      feelsLike: 12,
-    },
-    forecast: [
-      { day: 'Mon', high: 16, low: 10, condition: 'Cloudy' },
-      { day: 'Tue', high: 17, low: 11, condition: 'Rainy' },
-      { day: 'Wed', high: 15, low: 9, condition: 'Foggy' },
-      { day: 'Thu', high: 16, low: 10, condition: 'Cloudy' },
-      { day: 'Fri', high: 17, low: 11, condition: 'Partly Cloudy' },
-    ],
-    alerts: [
-      {
-        id: 'HP2024-1',
-        type: 'Flood',
-        severity: 'Warning',
-        title: 'Landslide & Heavy Rain Alert',
-        description:
-          'Continuous rainfall triggering landslides in Kullu and Mandi regions. Avoid hilly routes.',
-        area: 'Shimla, Kullu & Mandi',
-      },
-    ],
-  },
-
-  'Bihar': {
-    current: {
-      location: 'Bihar, IN',
-      temperature: 33,
-      condition: 'Sunny',
-      humidity: 60,
-      windSpeed: 18,
-      feelsLike: 36,
-    },
-    forecast: [
-      { day: 'Mon', high: 34, low: 28, condition: 'Sunny' },
-      { day: 'Tue', high: 33, low: 27, condition: 'Sunny' },
-      { day: 'Wed', high: 32, low: 26, condition: 'Cloudy' },
-      { day: 'Thu', high: 33, low: 27, condition: 'Sunny' },
-      { day: 'Fri', high: 34, low: 28, condition: 'Sunny' },
-    ],
-    alerts: [
-      {
-        id: 'BR2024-1',
-        type: 'Flood',
-        severity: 'Advisory',
-        title: 'Kosi Flood Advisory',
-        description:
-          'Heavy rainfall in catchment areas may cause flooding.',
-        area: 'Kosi River Basin',
-      },
-    ],
-  },
-
-  'Kerala': {
-    current: {
-      location: 'Kerala, IN',
-      temperature: 29,
-      condition: 'Humid',
-      humidity: 85,
-      windSpeed: 10,
-      feelsLike: 32,
-    },
-    forecast: [
-      { day: 'Mon', high: 30, low: 25, condition: 'Rainy' },
-      { day: 'Tue', high: 31, low: 26, condition: 'Rainy' },
-      { day: 'Wed', high: 29, low: 24, condition: 'Cloudy' },
-      { day: 'Thu', high: 30, low: 25, condition: 'Rainy' },
-      { day: 'Fri', high: 31, low: 26, condition: 'Rainy' },
-    ],
-    alerts: [
-      {
-        id: 'KL2024-1',
-        type: 'Flood',
-        severity: 'Warning',
-        title: 'Heavy Rainfall Flood Watch',
-        description:
-          'Monsoon rains expected. Stay alert for local flooding.',
-        area: 'Kochi & Alappuzha',
-      },
-    ],
-  },
-
-  'Punjab': {
-    current: {
-      location: 'Punjab, IN',
-      temperature: 35,
-      condition: 'Sunny',
-      humidity: 58,
-      windSpeed: 22,
-      feelsLike: 38,
-    },
-    forecast: [
-      { day: 'Mon', high: 36, low: 27, condition: 'Sunny' },
-      { day: 'Tue', high: 37, low: 28, condition: 'Sunny' },
-      { day: 'Wed', high: 34, low: 26, condition: 'Cloudy' },
-      { day: 'Thu', high: 33, low: 25, condition: 'Rainy' },
-      { day: 'Fri', high: 32, low: 24, condition: 'Rainy' },
-    ],
-    alerts: [
-      {
-        id: 'PB2024-1',
-        type: 'Flood',
-        severity: 'Warning',
-        title: 'Beas River Flood Warning',
-        description:
-          'Heavy rains in Himachal leading to overflow in Beas river. Evacuations may be required in border areas.',
-        area: 'Hoshiarpur & Gurdaspur Districts',
-      },
-      {
-        id: 'PB2024-2',
-        type: 'Heatwave',
-        severity: 'Advisory',
-        title: 'Post-Monsoon Heat Advisory',
-        description:
-          'Temperatures expected to rise above 40°C in plains. Stay indoors during peak hours.',
-        area: 'Amritsar & Ludhiana',
-      },
-    ],
-  },
+// Convert weather codes to conditions
+const getWeatherCondition = (code: number): string => {
+  if (code === 0) return 'Clear';
+  if (code <= 3) return 'Partly Cloudy';
+  if (code <= 48) return 'Foggy';
+  if (code <= 67) return 'Rainy';
+  if (code <= 77) return 'Snowy';
+  if (code <= 82) return 'Rainy';
+  if (code <= 86) return 'Snowy';
+  if (code <= 99) return 'Thunderstorm';
+  return 'Cloudy';
 };
 
-export const fetchWeatherData = (location: MockLocation): Promise<WeatherData> => {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      if (mockData[location]) {
-        resolve(mockData[location]);
-      } else {
-        reject(new Error('Location not found'));
+// ============================================
+// 2. FETCH REAL WEATHER DATA
+// ============================================
+
+async function fetchRealWeatherOpenWeather(location: string): Promise<WeatherData> {
+  if (!OPENWEATHER_API_KEY) {
+    throw new Error('OpenWeather API key not found. Add VITE_OPENWEATHER_API_KEY to .env');
+  }
+
+  try {
+    // Current weather
+    const country = OPENWEATHER_CONFIG.defaultCountryCode;
+    const currentResponse = await fetch(
+      `${OPENWEATHER_BASE}/weather?q=${location},${country}&units=metric&appid=${OPENWEATHER_API_KEY}`
+    );
+
+    if (!currentResponse.ok) {
+      throw new Error(`Weather API error: ${currentResponse.status}`);
+    }
+
+    const currentData: OpenWeatherResponse = await currentResponse.json();
+
+    // 5-day forecast
+    const forecastResponse = await fetch(
+      `${OPENWEATHER_BASE}/forecast?q=${location},${country}&units=metric&appid=${OPENWEATHER_API_KEY}`
+    );
+
+    const forecastData = await forecastResponse.json();
+
+    // Process forecast (group by day)
+    const dailyForecast = processForecast(forecastData.list);
+
+    // Fetch disaster alerts (using mock for now, or integrate GDACS)
+    const alerts = await fetchDisasterAlerts(location);
+
+    return {
+      current: {
+        location: `${currentData.name}, ${currentData.sys.country}`,
+        temperature: Math.round(currentData.main.temp),
+        condition: currentData.weather[0].main,
+        humidity: currentData.main.humidity,
+        windSpeed: Math.round(currentData.wind.speed * 3.6), // Convert m/s to km/h
+        feelsLike: Math.round(currentData.main.feels_like),
+      },
+      forecast: dailyForecast,
+      alerts: alerts,
+    };
+  } catch (error) {
+    console.error('OpenWeather API Error:', error);
+    throw error;
+  }
+}
+
+// ============================================
+// 3. ALTERNATIVE: Open-Meteo (No API Key!)
+// ============================================
+
+async function fetchRealWeatherOpenMeteo(location: string): Promise<WeatherData> {
+  try {
+    // First, get coordinates using geocoding
+    const country = OPENWEATHER_CONFIG.defaultCountryCode;
+    const geoResponse = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
+        location
+      )}&count=5&language=en&format=json&country=${country}`
+    );
+    const geoData = await geoResponse.json();
+
+    if (!geoData.results || geoData.results.length === 0) {
+      throw new Error('Location not found');
+    }
+
+    const filteredResults = geoData.results.filter(
+      (result: any) => result.country_code?.toUpperCase() === country
+    );
+
+    if (filteredResults.length === 0) {
+      throw new Error('Only Indian locations are supported in Open-Meteo mode. Try another city/state in India.');
+    }
+
+    const bestMatch = filteredResults[0];
+
+    const { latitude, longitude, name, country: countryName } = bestMatch;
+
+    // Fetch weather data
+    const weatherResponse = await fetch(
+      `${OPEN_METEO_BASE}/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&hourly=temperature_2m,relativehumidity_2m,windspeed_10m&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto`
+    );
+
+    const weatherData = await weatherResponse.json();
+
+    // Process daily forecast
+    const dailyForecast = weatherData.daily.time.slice(0, 5).map((date: string, i: number) => ({
+      day: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }),
+      high: Math.round(weatherData.daily.temperature_2m_max[i]),
+      low: Math.round(weatherData.daily.temperature_2m_min[i]),
+      condition: getWeatherCondition(weatherData.daily.weathercode[i]),
+    }));
+
+    // Fetch disaster alerts
+    const alerts = await fetchDisasterAlerts(location);
+
+    return {
+      current: {
+        location: `${name}, ${countryName}`,
+        temperature: Math.round(weatherData.current_weather.temperature),
+        condition: getWeatherCondition(weatherData.current_weather.weathercode),
+        humidity: weatherData.hourly.relativehumidity_2m[0],
+        windSpeed: Math.round(weatherData.current_weather.windspeed),
+        feelsLike: Math.round(weatherData.current_weather.temperature - 2), // Approximation
+      },
+      forecast: dailyForecast,
+      alerts: alerts,
+    };
+  } catch (error) {
+    console.error('Open-Meteo API Error:', error);
+    throw error;
+  }
+}
+
+// ============================================
+// 4. DISASTER ALERTS (ReliefWeb)
+// ============================================
+
+async function fetchDisasterAlerts(location: string) {
+  const alerts: WeatherAlert[] = [];
+  const normalizedLocation = normalizeLocationName(location);
+  const resolvedMockLocation = mockLocationLookup[normalizedLocation];
+
+  try {
+    const reliefWebAlerts = await fetchReliefWebAlerts();
+    const locationSpecific = filterAlertsForLocation(
+      reliefWebAlerts,
+      resolvedMockLocation ?? location
+    );
+
+    if (locationSpecific.length > 0) {
+      alerts.push(...locationSpecific);
+    } else if (reliefWebAlerts.length > 0) {
+      alerts.push(...reliefWebAlerts.slice(0, 3));
+    }
+  } catch (error) {
+    console.warn('Could not fetch disaster alerts:', error);
+  }
+
+  if (alerts.length === 0 && resolvedMockLocation) {
+    const mockAlerts = MOCK_WEATHER_DATA[resolvedMockLocation]?.alerts ?? [];
+    alerts.push(...mockAlerts);
+  }
+
+  if (alerts.length === 0) {
+    alerts.push({
+      id: 'NO-ALERT',
+      type: 'Info',
+      severity: 'Advisory',
+      title: `No Active Alerts for ${resolvedMockLocation ?? location}`,
+      description: 'No major disasters reported in this region right now.',
+      area: resolvedMockLocation ?? location,
+    });
+  }
+
+  return alerts;
+}
+
+async function fetchReliefWebAlerts(): Promise<WeatherAlert[]> {
+  const alerts: WeatherAlert[] = [];
+
+  try {
+    const reliefWebConfig = DISASTER_ALERT_CONFIG.reliefWeb;
+    const url = new URL(reliefWebConfig.baseUrl);
+    url.searchParams.set('appname', reliefWebConfig.appName);
+    url.searchParams.set('limit', String(reliefWebConfig.limit));
+    url.searchParams.append('sort[]', 'date:desc');
+    url.searchParams.append('filter[field]', 'country');
+    url.searchParams.append('filter[value]', reliefWebConfig.defaultCountry);
+
+    const response = await fetch(url.toString());
+
+    if (!response.ok) {
+      throw new Error(`ReliefWeb API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (Array.isArray(data?.data)) {
+      data.data.forEach((item: any) => {
+        const fields = item.fields ?? {};
+        const area =
+          fields.primary_country?.name ??
+          fields.country?.[0]?.name ??
+          reliefWebConfig.defaultCountry;
+
+        alerts.push({
+          id: `RW-${item.id}`,
+          type:
+            fields.primary_type?.name ||
+            fields.disaster_type?.name ||
+            fields.disaster_type?.[0]?.name ||
+            fields.type?.name ||
+            'Info',
+          severity: mapReliefWebStatusToSeverity(fields.status),
+          title: fields.name || fields.headline || 'ReliefWeb Alert',
+          description:
+            fields.description ||
+            fields.summary ||
+            fields['description-html'] ||
+            'ReliefWeb reported event',
+          area,
+        });
+      });
+    }
+  } catch (error) {
+    console.warn('ReliefWeb API Error:', error);
+  }
+
+  return alerts;
+}
+
+const mapReliefWebStatusToSeverity = (status?: string): AlertSeverity => {
+  const normalized = status?.toLowerCase() ?? '';
+
+  if (normalized === 'alert') return 'Warning';
+  if (normalized === 'current' || normalized === 'ongoing') return 'Watch';
+  if (normalized === 'past') return 'Advisory';
+
+  return 'Advisory';
+};
+
+const filterAlertsForLocation = (alerts: WeatherAlert[], location: string): WeatherAlert[] => {
+  const normalized = normalizeLocationName(location);
+  const keywords = new Set<string>();
+
+  if (normalized) {
+    keywords.add(normalized);
+  }
+
+  const resolvedMockLocation = mockLocationLookup[normalized];
+  if (resolvedMockLocation) {
+    keywords.add(normalizeLocationName(resolvedMockLocation));
+  }
+
+  if (keywords.size === 0) {
+    return [];
+  }
+
+  return alerts.filter((alert) => {
+    const haystack = `${alert.title} ${alert.description} ${alert.area}`.toLowerCase();
+    for (const keyword of keywords) {
+      if (keyword && haystack.includes(keyword)) {
+        return true;
       }
-    }, 800);
+    }
+    return false;
   });
 };
+
+// ============================================
+// 5. HELPER: Process forecast data
+// ============================================
+
+function processForecast(list: any[]) {
+  const dailyMap = new Map();
+
+  list.forEach((item: any) => {
+    const date = new Date(item.dt * 1000);
+    const day = date.toLocaleDateString('en-US', { weekday: 'short' });
+
+    if (!dailyMap.has(day) && dailyMap.size < 5) {
+      dailyMap.set(day, {
+        day,
+        high: Math.round(item.main.temp_max),
+        low: Math.round(item.main.temp_min),
+        condition: item.weather[0].main,
+      });
+    }
+  });
+
+  return Array.from(dailyMap.values());
+}
+
+// ============================================
+// 6. MAIN SERVICE WITH TOGGLE
+// ============================================
+
+export type DataSource = 'mock' | 'openweather' | 'openmeteo';
+
+export class WeatherService {
+  private dataSource: DataSource = 'openmeteo'; // Default to free API
+
+  setDataSource(source: DataSource) {
+    this.dataSource = source;
+    console.log(`Data source switched to: ${source}`);
+  }
+
+  getDataSource(): DataSource {
+    return this.dataSource;
+  }
+
+  async getWeather(location: string): Promise<WeatherData> {
+    const trimmedLocation = location.trim();
+    if (!trimmedLocation) {
+      throw new Error('Location is required');
+    }
+
+    const normalizedLocation = normalizeLocationName(trimmedLocation);
+    const resolvedMockLocation = mockLocationLookup[normalizedLocation];
+    const queryLocation = resolvedMockLocation ?? trimmedLocation;
+
+    console.log(`Fetching weather for ${queryLocation} using ${this.dataSource}`);
+
+    switch (this.dataSource) {
+      case 'mock':
+        // Use mock data
+        if (resolvedMockLocation) {
+          return fetchMockData(resolvedMockLocation);
+        }
+        throw new Error(`Mock location not available. Try: ${MOCK_LOCATION_OPTIONS.join(', ')}`);
+
+      case 'openweather':
+        // Use OpenWeather API (requires key)
+        return fetchRealWeatherOpenWeather(queryLocation);
+
+      case 'openmeteo':
+        // Use Open-Meteo API (no key needed)
+        return fetchRealWeatherOpenMeteo(queryLocation);
+
+      default:
+        throw new Error('Invalid data source');
+    }
+  }
+}
+
+// Export singleton instance
+export const weatherService = new WeatherService();
