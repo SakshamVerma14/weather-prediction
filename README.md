@@ -848,11 +848,10 @@ in the Software without restriction...
 
 ## 📞 Contact & Support
 
-- **Author:** Your Name
+- **Author:** Saksham Verma
 - **Email:** your.email@example.com
-- **GitHub:** [@yourusername](https://github.com/yourusername)
-- **Twitter:** [@yourhandle](https://twitter.com/yourhandle)
-- **Website:** https://yourwebsite.com
+- **GitHub:** [@SakshamVerma14](https://github.com/SakshamVerma14)
+
 
 ---
 
@@ -903,7 +902,7 @@ If you find this project helpful, please consider:
 
 <div align="center">
 
-**Made with ❤️ by [Your Name](https://github.com/yourusername)**
+**Made with ❤️ by [Saksham](https://github.com/SakshamVerma14) and his team**
 
 **[⬆ Back to Top](#-weather--disaster-watch)**
 
