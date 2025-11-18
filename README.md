@@ -3,9 +3,6 @@
 > Real-time weather monitoring and disaster prediction system with ML-ready architecture
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![React](https://img.shields.io/badge/React-18+-61DAFB?logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-5+-3178C6?logo=typescript)
-![Vite](https://img.shields.io/badge/Vite-5+-646CFF?logo=vite)
 
 ---
 
