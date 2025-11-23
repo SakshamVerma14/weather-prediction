@@ -1,47 +1,32 @@
-// src/types/index.ts
+// src/types.ts
 
 export interface CurrentWeather {
   location: string;
   temperature: number;
-  condition: string;
+  feelsLike: number;
   humidity: number;
   windSpeed: number;
-  feelsLike: number;
+  condition: string;
+  source?: string;
+  lat?: number;
+  lon?: number;
 }
 
 export interface ForecastDay {
-  day: string;
-  high: number;
-  low: number;
-  condition: string;
+  day: string;          // e.g. "Mon"
+  high: number;         // max temp
+  low: number;          // min temp
+  condition: string;    // short text
 }
 
-export type AlertSeverity =
-  | 'Warning'
-  | 'Watch'
-  | 'Advisory'
-  | 'Info'
-  | 'Green'
-  | 'Orange'
-  | 'Red';
-
-export type AlertType =
-  | 'Flood'
-  | 'Earthquake'
-  | 'Avalanche'
-  | 'Heatwave'
-  | 'Cyclone'
-  | 'Storm'
-  | 'Info'
-  | string;
+export type AlertSeverity = "Info" | "Warning";
 
 export interface WeatherAlert {
   id: string;
-  type: AlertType;
-  severity: AlertSeverity;
   title: string;
   description: string;
   area: string;
+  severity: AlertSeverity;
 }
 
 export interface WeatherData {
@@ -49,6 +34,3 @@ export interface WeatherData {
   forecast: ForecastDay[];
   alerts: WeatherAlert[];
 }
-
-export type Forecast = ForecastDay;
-export type Alert = WeatherAlert;

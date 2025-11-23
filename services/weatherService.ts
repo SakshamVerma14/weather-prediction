@@ -1,424 +1,289 @@
 // src/services/weatherService.ts
-import type { WeatherAlert, WeatherData, AlertSeverity } from '../types';
-import {
-  fetchWeatherData as fetchMockData,
-  MockLocation,
-  MOCK_WEATHER_DATA,
-} from './mockData';
-export type { MockLocation } from './mockData';
-import {
-  OPENWEATHER_CONFIG,
-  OPEN_METEO_CONFIG,
-  DISASTER_ALERT_CONFIG,
-} from '../config/apiConfig';
+import type { WeatherData } from "../types";
 
-// ============================================
-// 1. REAL API SERVICE (OpenWeather + Others)
-// ============================================
+/** Which backend the UI is "using" */
+export type DataSource = "mock" | "open-meteo";
 
-const OPENWEATHER_API_KEY = OPENWEATHER_CONFIG.apiKey;
-const OPENWEATHER_BASE = OPENWEATHER_CONFIG.baseUrl;
+let currentSource: DataSource = "open-meteo";
 
-// Alternative: Open-Meteo (NO API KEY NEEDED!)
-const OPEN_METEO_BASE = OPEN_METEO_CONFIG.baseUrl;
+export function getCurrentSource(): DataSource {
+  return currentSource;
+}
 
-const normalizeLocationName = (name: string) => name.trim().toLowerCase();
+export function setCurrentSource(next: DataSource) {
+  currentSource = next;
+}
 
-export const MOCK_LOCATION_OPTIONS: MockLocation[] = [
-  'Uttarakhand',
-  'Mumbai',
-  'Kashmir',
-  'Jaipur',
-  'Assam',
-  'Himachal Pradesh',
-  'Bihar',
-  'Kerala',
-  'Punjab',
-] as const;
+/* ------------------------------------------------------------------ */
+/*  Open-Meteo geocoding & forecast (with India preference)           */
+/* ------------------------------------------------------------------ */
 
-const mockLocationLookup: Record<string, MockLocation> = MOCK_LOCATION_OPTIONS.reduce(
-  (acc, loc) => {
-    acc[normalizeLocationName(loc)] = loc;
-    return acc;
+const GEO_URL = "https://geocoding-api.open-meteo.com/v1/search";
+const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
+
+/** Heuristic: does this query look like an Indian location? */
+function looksIndian(query: string): boolean {
+  const q = query.toLowerCase();
+
+  const indianStates = [
+    "andhra pradesh",
+    "arunachal pradesh",
+    "assam",
+    "bihar",
+    "chhattisgarh",
+    "goa",
+    "gujarat",
+    "haryana",
+    "himachal pradesh",
+    "jharkhand",
+    "karnataka",
+    "kerala",
+    "madhya pradesh",
+    "maharashtra",
+    "manipur",
+    "meghalaya",
+    "mizoram",
+    "nagaland",
+    "odisha",
+    "punjab",
+    "rajasthan",
+    "sikkim",
+    "tamil nadu",
+    "telangana",
+    "tripura",
+    "uttar pradesh",
+    "uttarakhand",
+    "west bengal",
+    "delhi",
+    "nct of delhi",
+    "jammu",
+    "kashmir",
+    "ladakh",
+  ];
+
+  const bigIndianCities = [
+    "mumbai",
+    "bombay",
+    "delhi",
+    "new delhi",
+    "kolkata",
+    "calcutta",
+    "chennai",
+    "madras",
+    "bengaluru",
+    "bangalore",
+    "hyderabad",
+    "pune",
+    "ahmedabad",
+    "jaipur",
+    "lucknow",
+    "kanpur",
+    "patna",
+    "bhopal",
+    "indore",
+    "nagpur",
+    "surat",
+    "thane",
+  ];
+
+  if (q.includes("india")) return true;
+  if (indianStates.some((s) => q.includes(s))) return true;
+  if (bigIndianCities.some((c) => q.includes(c))) return true;
+
+  return false;
+}
+
+async function geocode(query: string) {
+  const url =
+    GEO_URL +
+    `?name=${encodeURIComponent(query)}&count=10&language=en&format=json`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error("Failed to contact geocoding service.");
+  }
+
+  const data = await res.json();
+  const results: any[] = data.results ?? [];
+
+  if (!results.length) {
+    throw new Error("Location not found. Try another city / state.");
+  }
+
+  let chosen: any | undefined;
+
+  // Prefer India for Indian-looking queries
+  if (looksIndian(query)) {
+    chosen = results.find(
+      (r) => r.country_code === "IN" || r.country === "India"
+    );
+  }
+
+  if (!chosen) {
+    // fallback – first result
+    chosen = results[0];
+  }
+
+  return {
+    lat: chosen.latitude as number,
+    lon: chosen.longitude as number,
+    displayName: `${chosen.name}, ${chosen.country}`,
+  };
+}
+
+async function fetchForecast(lat: number, lon: number) {
+  const params = new URLSearchParams({
+    latitude: lat.toString(),
+    longitude: lon.toString(),
+    current_weather: "true",
+    hourly: "relativehumidity_2m",
+    daily: "temperature_2m_max,temperature_2m_min,weathercode",
+    timezone: "auto",
+  });
+
+  const res = await fetch(`${FORECAST_URL}?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error("Failed to fetch forecast from Open-Meteo.");
+  }
+  return res.json();
+}
+
+function mapWeatherCodeToText(code: number): string {
+  if (code === 0) return "Clear sky";
+  if ([1, 2, 3].includes(code)) return "Partly cloudy";
+  if ([45, 48].includes(code)) return "Foggy";
+  if ([51, 53, 55].includes(code)) return "Drizzle";
+  if ([61, 63, 65, 80, 81, 82].includes(code)) return "Rain";
+  if ([71, 73, 75, 85, 86].includes(code)) return "Snow";
+  if ([95, 96, 99].includes(code)) return "Thunderstorm";
+  return "Mixed conditions";
+}
+
+/* ------------------------------------------------------------------ */
+/*  Simple mock data (for the toggle demo, no API)                    */
+/* ------------------------------------------------------------------ */
+
+const MOCK_TABLE: Record<string, Partial<WeatherData["current"]>> = {
+  mumbai: {
+    temperature: 32,
+    feelsLike: 36,
+    condition: "Humid and partly cloudy",
+    humidity: 78,
+    windSpeed: 14,
   },
-  {} as Record<string, MockLocation>
-);
-
-interface OpenWeatherResponse {
-  main: {
-    temp: number;
-    feels_like: number;
-    humidity: number;
-  };
-  weather: Array<{
-    main: string;
-    description: string;
-  }>;
-  wind: {
-    speed: number;
-  };
-  name: string;
-  sys: {
-    country: string;
-  };
-}
-
-interface OpenMeteoResponse {
-  current_weather: {
-    temperature: number;
-    windspeed: number;
-    weathercode: number;
-  };
-  hourly: {
-    temperature_2m: number[];
-    relativehumidity_2m: number[];
-  };
-}
-
-// Convert weather codes to conditions
-const getWeatherCondition = (code: number): string => {
-  if (code === 0) return 'Clear';
-  if (code <= 3) return 'Partly Cloudy';
-  if (code <= 48) return 'Foggy';
-  if (code <= 67) return 'Rainy';
-  if (code <= 77) return 'Snowy';
-  if (code <= 82) return 'Rainy';
-  if (code <= 86) return 'Snowy';
-  if (code <= 99) return 'Thunderstorm';
-  return 'Cloudy';
+  kerala: {
+    temperature: 29,
+    feelsLike: 32,
+    condition: "Monsoon showers",
+    humidity: 85,
+    windSpeed: 12,
+  },
+  bihar: {
+    temperature: 30,
+    feelsLike: 34,
+    condition: "Humid with rain spells",
+    humidity: 80,
+    windSpeed: 10,
+  },
+  punjab: {
+    temperature: 27,
+    feelsLike: 28,
+    condition: "Warm and dry",
+    humidity: 55,
+    windSpeed: 9,
+  },
 };
 
-// ============================================
-// 2. FETCH REAL WEATHER DATA
-// ============================================
+function buildMockWeather(query: string): WeatherData {
+  const key = query.trim().toLowerCase();
+  const base = MOCK_TABLE[key] ?? {
+    temperature: 28,
+    feelsLike: 30,
+    condition: "Warm and partly cloudy",
+    humidity: 70,
+    windSpeed: 10,
+  };
 
-async function fetchRealWeatherOpenWeather(location: string): Promise<WeatherData> {
-  if (!OPENWEATHER_API_KEY) {
-    throw new Error('OpenWeather API key not found. Add VITE_OPENWEATHER_API_KEY to .env');
-  }
+  const current = {
+    location: `${query} (Mock)`,
+    temperature: base.temperature ?? 28,
+    feelsLike: base.feelsLike ?? 30,
+    condition: base.condition ?? "Mock weather",
+    humidity: base.humidity ?? 70,
+    windSpeed: base.windSpeed ?? 8,
+    source: "Mock dataset",
+  };
 
-  try {
-    // Current weather
-    const country = OPENWEATHER_CONFIG.defaultCountryCode;
-    const currentResponse = await fetch(
-      `${OPENWEATHER_BASE}/weather?q=${location},${country}&units=metric&appid=${OPENWEATHER_API_KEY}`
-    );
+  const forecast = Array.from({ length: 5 }).map((_, i) => ({
+    day: ["Mon", "Tue", "Wed", "Thu", "Fri"][i],
+    high: (base.temperature ?? 28) + (i % 3) - 1,
+    low: (base.temperature ?? 28) - 4 + (i % 2),
+    condition: base.condition ?? "Mock weather",
+  }));
 
-    if (!currentResponse.ok) {
-      throw new Error(`Weather API error: ${currentResponse.status}`);
-    }
-
-    const currentData: OpenWeatherResponse = await currentResponse.json();
-
-    // 5-day forecast
-    const forecastResponse = await fetch(
-      `${OPENWEATHER_BASE}/forecast?q=${location},${country}&units=metric&appid=${OPENWEATHER_API_KEY}`
-    );
-
-    const forecastData = await forecastResponse.json();
-
-    // Process forecast (group by day)
-    const dailyForecast = processForecast(forecastData.list);
-
-    // Fetch disaster alerts (using mock for now, or integrate GDACS)
-    const alerts = await fetchDisasterAlerts(location);
-
-    return {
-      current: {
-        location: `${currentData.name}, ${currentData.sys.country}`,
-        temperature: Math.round(currentData.main.temp),
-        condition: currentData.weather[0].main,
-        humidity: currentData.main.humidity,
-        windSpeed: Math.round(currentData.wind.speed * 3.6), // Convert m/s to km/h
-        feelsLike: Math.round(currentData.main.feels_like),
-      },
-      forecast: dailyForecast,
-      alerts: alerts,
-    };
-  } catch (error) {
-    console.error('OpenWeather API Error:', error);
-    throw error;
-  }
+  return {
+    current,
+    forecast,
+    alerts: [],
+  };
 }
 
-// ============================================
-// 3. ALTERNATIVE: Open-Meteo (No API Key!)
-// ============================================
+/* ------------------------------------------------------------------ */
+/*  Public service used by the React app                              */
+/* ------------------------------------------------------------------ */
 
-async function fetchRealWeatherOpenMeteo(location: string): Promise<WeatherData> {
-  try {
-    // First, get coordinates using geocoding
-    const country = OPENWEATHER_CONFIG.defaultCountryCode;
-    const geoResponse = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
-        location
-      )}&count=5&language=en&format=json&country=${country}`
-    );
-    const geoData = await geoResponse.json();
-
-    if (!geoData.results || geoData.results.length === 0) {
-      throw new Error('Location not found');
+export const weatherService = {
+  async getWeather(query: string): Promise<WeatherData> {
+    if (currentSource === "mock") {
+      // Don’t hit any API – return synthetic data
+      return buildMockWeather(query);
     }
 
-    const filteredResults = geoData.results.filter(
-      (result: any) => result.country_code?.toUpperCase() === country
-    );
+    // Live Open-Meteo path
+    const geo = await geocode(query);
+    const forecast = await fetchForecast(geo.lat, geo.lon);
 
-    if (filteredResults.length === 0) {
-      throw new Error('Only Indian locations are supported in Open-Meteo mode. Try another city/state in India.');
-    }
+    const currentTemp = forecast.current_weather?.temperature ?? 0;
+    const windspeed = forecast.current_weather?.windspeed ?? 0;
+    const weathercode = forecast.current_weather?.weathercode ?? 0;
 
-    const bestMatch = filteredResults[0];
+    const humidityArray: number[] = forecast.hourly?.relativehumidity_2m ?? [];
+    const humidity =
+      humidityArray.length > 0
+        ? Math.round(
+            humidityArray.reduce((a, b) => a + b, 0) / humidityArray.length
+          )
+        : 0;
 
-    const { latitude, longitude, name, country: countryName } = bestMatch;
+    const daily = forecast.daily ?? {};
+    const days: string[] = daily.time ?? [];
+    const max: number[] = daily.temperature_2m_max ?? [];
+    const min: number[] = daily.temperature_2m_min ?? [];
+    const codes: number[] = daily.weathercode ?? [];
 
-    // Fetch weather data
-    const weatherResponse = await fetch(
-      `${OPEN_METEO_BASE}/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&hourly=temperature_2m,relativehumidity_2m,windspeed_10m&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=auto`
-    );
-
-    const weatherData = await weatherResponse.json();
-
-    // Process daily forecast
-    const dailyForecast = weatherData.daily.time.slice(0, 5).map((date: string, i: number) => ({
-      day: new Date(date).toLocaleDateString('en-US', { weekday: 'short' }),
-      high: Math.round(weatherData.daily.temperature_2m_max[i]),
-      low: Math.round(weatherData.daily.temperature_2m_min[i]),
-      condition: getWeatherCondition(weatherData.daily.weathercode[i]),
+    const forecastDays = days.slice(0, 5).map((d, i) => ({
+      day: new Date(d).toLocaleDateString("en-IN", {
+        weekday: "short",
+      }),
+      high: Math.round(max[i] ?? currentTemp),
+      low: Math.round(min[i] ?? currentTemp),
+      condition: mapWeatherCodeToText(codes[i] ?? weathercode),
     }));
 
-    // Fetch disaster alerts
-    const alerts = await fetchDisasterAlerts(location);
-
-    return {
+    const data: WeatherData = {
       current: {
-        location: `${name}, ${countryName}`,
-        temperature: Math.round(weatherData.current_weather.temperature),
-        condition: getWeatherCondition(weatherData.current_weather.weathercode),
-        humidity: weatherData.hourly.relativehumidity_2m[0],
-        windSpeed: Math.round(weatherData.current_weather.windspeed),
-        feelsLike: Math.round(weatherData.current_weather.temperature - 2), // Approximation
+        location: geo.displayName,
+        temperature: Math.round(currentTemp),
+        feelsLike: Math.round(currentTemp),
+        condition: mapWeatherCodeToText(weathercode),
+        humidity,
+        windSpeed: Math.round(windspeed),
+        source: "Open-Meteo",
       },
-      forecast: dailyForecast,
-      alerts: alerts,
+      forecast: forecastDays,
+      alerts: [],
     };
-  } catch (error) {
-    console.error('Open-Meteo API Error:', error);
-    throw error;
-  }
-}
 
-// ============================================
-// 4. DISASTER ALERTS (ReliefWeb)
-// ============================================
-
-async function fetchDisasterAlerts(location: string) {
-  const alerts: WeatherAlert[] = [];
-  const normalizedLocation = normalizeLocationName(location);
-  const resolvedMockLocation = mockLocationLookup[normalizedLocation];
-
-  try {
-    const reliefWebAlerts = await fetchReliefWebAlerts();
-    const locationSpecific = filterAlertsForLocation(
-      reliefWebAlerts,
-      resolvedMockLocation ?? location
-    );
-
-    if (locationSpecific.length > 0) {
-      alerts.push(...locationSpecific);
-    } else if (reliefWebAlerts.length > 0) {
-      alerts.push(...reliefWebAlerts.slice(0, 3));
-    }
-  } catch (error) {
-    console.warn('Could not fetch disaster alerts:', error);
-  }
-
-  if (alerts.length === 0 && resolvedMockLocation) {
-    const mockAlerts = MOCK_WEATHER_DATA[resolvedMockLocation]?.alerts ?? [];
-    alerts.push(...mockAlerts);
-  }
-
-  if (alerts.length === 0) {
-    alerts.push({
-      id: 'NO-ALERT',
-      type: 'Info',
-      severity: 'Advisory',
-      title: `No Active Alerts for ${resolvedMockLocation ?? location}`,
-      description: 'No major disasters reported in this region right now.',
-      area: resolvedMockLocation ?? location,
-    });
-  }
-
-  return alerts;
-}
-
-async function fetchReliefWebAlerts(): Promise<WeatherAlert[]> {
-  const alerts: WeatherAlert[] = [];
-
-  try {
-    const reliefWebConfig = DISASTER_ALERT_CONFIG.reliefWeb;
-    const url = new URL(reliefWebConfig.baseUrl);
-    url.searchParams.set('appname', reliefWebConfig.appName);
-    url.searchParams.set('limit', String(reliefWebConfig.limit));
-    url.searchParams.append('sort[]', 'date:desc');
-    url.searchParams.append('filter[field]', 'country');
-    url.searchParams.append('filter[value]', reliefWebConfig.defaultCountry);
-
-    const response = await fetch(url.toString());
-
-    if (!response.ok) {
-      throw new Error(`ReliefWeb API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (Array.isArray(data?.data)) {
-      data.data.forEach((item: any) => {
-        const fields = item.fields ?? {};
-        const area =
-          fields.primary_country?.name ??
-          fields.country?.[0]?.name ??
-          reliefWebConfig.defaultCountry;
-
-        alerts.push({
-          id: `RW-${item.id}`,
-          type:
-            fields.primary_type?.name ||
-            fields.disaster_type?.name ||
-            fields.disaster_type?.[0]?.name ||
-            fields.type?.name ||
-            'Info',
-          severity: mapReliefWebStatusToSeverity(fields.status),
-          title: fields.name || fields.headline || 'ReliefWeb Alert',
-          description:
-            fields.description ||
-            fields.summary ||
-            fields['description-html'] ||
-            'ReliefWeb reported event',
-          area,
-        });
-      });
-    }
-  } catch (error) {
-    console.warn('ReliefWeb API Error:', error);
-  }
-
-  return alerts;
-}
-
-const mapReliefWebStatusToSeverity = (status?: string): AlertSeverity => {
-  const normalized = status?.toLowerCase() ?? '';
-
-  if (normalized === 'alert') return 'Warning';
-  if (normalized === 'current' || normalized === 'ongoing') return 'Watch';
-  if (normalized === 'past') return 'Advisory';
-
-  return 'Advisory';
+    return data;
+  },
 };
-
-const filterAlertsForLocation = (alerts: WeatherAlert[], location: string): WeatherAlert[] => {
-  const normalized = normalizeLocationName(location);
-  const keywords = new Set<string>();
-
-  if (normalized) {
-    keywords.add(normalized);
-  }
-
-  const resolvedMockLocation = mockLocationLookup[normalized];
-  if (resolvedMockLocation) {
-    keywords.add(normalizeLocationName(resolvedMockLocation));
-  }
-
-  if (keywords.size === 0) {
-    return [];
-  }
-
-  return alerts.filter((alert) => {
-    const haystack = `${alert.title} ${alert.description} ${alert.area}`.toLowerCase();
-    for (const keyword of keywords) {
-      if (keyword && haystack.includes(keyword)) {
-        return true;
-      }
-    }
-    return false;
-  });
-};
-
-// ============================================
-// 5. HELPER: Process forecast data
-// ============================================
-
-function processForecast(list: any[]) {
-  const dailyMap = new Map();
-
-  list.forEach((item: any) => {
-    const date = new Date(item.dt * 1000);
-    const day = date.toLocaleDateString('en-US', { weekday: 'short' });
-
-    if (!dailyMap.has(day) && dailyMap.size < 5) {
-      dailyMap.set(day, {
-        day,
-        high: Math.round(item.main.temp_max),
-        low: Math.round(item.main.temp_min),
-        condition: item.weather[0].main,
-      });
-    }
-  });
-
-  return Array.from(dailyMap.values());
-}
-
-// ============================================
-// 6. MAIN SERVICE WITH TOGGLE
-// ============================================
-
-export type DataSource = 'mock' | 'openweather' | 'openmeteo';
-
-export class WeatherService {
-  private dataSource: DataSource = 'openmeteo'; // Default to free API
-
-  setDataSource(source: DataSource) {
-    this.dataSource = source;
-    console.log(`Data source switched to: ${source}`);
-  }
-
-  getDataSource(): DataSource {
-    return this.dataSource;
-  }
-
-  async getWeather(location: string): Promise<WeatherData> {
-    const trimmedLocation = location.trim();
-    if (!trimmedLocation) {
-      throw new Error('Location is required');
-    }
-
-    const normalizedLocation = normalizeLocationName(trimmedLocation);
-    const resolvedMockLocation = mockLocationLookup[normalizedLocation];
-    const queryLocation = resolvedMockLocation ?? trimmedLocation;
-
-    console.log(`Fetching weather for ${queryLocation} using ${this.dataSource}`);
-
-    switch (this.dataSource) {
-      case 'mock':
-        // Use mock data
-        if (resolvedMockLocation) {
-          return fetchMockData(resolvedMockLocation);
-        }
-        throw new Error(`Mock location not available. Try: ${MOCK_LOCATION_OPTIONS.join(', ')}`);
-
-      case 'openweather':
-        // Use OpenWeather API (requires key)
-        return fetchRealWeatherOpenWeather(queryLocation);
-
-      case 'openmeteo':
-        // Use Open-Meteo API (no key needed)
-        return fetchRealWeatherOpenMeteo(queryLocation);
-
-      default:
-        throw new Error('Invalid data source');
-    }
-  }
-}
-
-// Export singleton instance
-export const weatherService = new WeatherService();

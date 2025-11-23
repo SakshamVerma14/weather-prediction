@@ -1,78 +1,51 @@
 // src/components/DataSourceToggle.tsx
-import { useState } from 'react';
-import { weatherService, DataSource } from '../services/weatherService';
+import { useEffect, useState } from "react";
+import {
+  getCurrentSource,
+  setCurrentSource,
+  type DataSource,
+} from "../services/weatherService";
 
 export default function DataSourceToggle() {
-  const [currentSource, setCurrentSource] = useState<DataSource>(
-    weatherService.getDataSource()
-  );
+  const [source, setSource] = useState<DataSource>("mock");
 
-  const handleSourceChange = (source: DataSource) => {
-    setCurrentSource(source);
-    weatherService.setDataSource(source);
-    
-    // Show toast notification (optional)
-    console.log(`Switched to ${source} data source`);
+  useEffect(() => {
+    setSource(getCurrentSource());
+  }, []);
+
+  const handleChange = (next: DataSource) => {
+    setSource(next);
+    setCurrentSource(next);
   };
 
   return (
-    <div className="fixed top-4 right-4 bg-[#3c3836] border-2 border-[#665c54] p-4 rounded-sm shadow-lg">
-      <div className="text-[#ebdbb2] text-sm font-bold mb-2">
-        📡 DATA SOURCE
-      </div>
-      
-      <div className="flex flex-col gap-2">
-        {/* Mock Data Option */}
-        <label className="flex items-center gap-2 cursor-pointer hover:bg-[#504945] p-2 rounded transition">
-          <input
-            type="radio"
-            name="dataSource"
-            value="mock"
-            checked={currentSource === 'mock'}
-            onChange={() => handleSourceChange('mock')}
-            className="w-4 h-4 accent-[#b8bb26]"
-          />
-          <span className="text-[#d5c4a1] text-sm">
-            🎭 Mock Data (Dummy)
-          </span>
-        </label>
-
-        {/* Open-Meteo Option (Recommended - Free!) */}
-        <label className="flex items-center gap-2 cursor-pointer hover:bg-[#504945] p-2 rounded transition">
-          <input
-            type="radio"
-            name="dataSource"
-            value="openmeteo"
-            checked={currentSource === 'openmeteo'}
-            onChange={() => handleSourceChange('openmeteo')}
-            className="w-4 h-4 accent-[#83a598]"
-          />
-          <span className="text-[#d5c4a1] text-sm">
-            🌍 Open-Meteo (Free!)
-          </span>
-        </label>
-
-        {/* OpenWeather Option (Needs API Key) */}
-        <label className="flex items-center gap-2 cursor-pointer hover:bg-[#504945] p-2 rounded transition">
-          <input
-            type="radio"
-            name="dataSource"
-            value="openweather"
-            checked={currentSource === 'openweather'}
-            onChange={() => handleSourceChange('openweather')}
-            className="w-4 h-4 accent-[#fabd2f]"
-          />
-          <span className="text-[#d5c4a1] text-sm">
-            ☁️ OpenWeather (API Key)
-          </span>
-        </label>
-      </div>
-
-      {/* Info Badge */}
-      <div className="mt-3 text-xs text-[#928374] border-t border-[#504945] pt-2">
-        {currentSource === 'mock' && '💡 Using test data'}
-        {currentSource === 'openmeteo' && '✅ No API key needed'}
-        {currentSource === 'openweather' && '🔑 Requires API key in .env'}
+    <div className="inline-flex items-center gap-2 rounded-full bg-slate-900/70 border border-cyan-500/40 px-3 py-2 text-xs text-cyan-100 shadow-md shadow-cyan-900/40">
+      <span className="tracking-[0.2em] uppercase text-[10px] text-cyan-300">
+        Data Source
+      </span>
+      <div className="flex items-center rounded-full bg-slate-950/80 p-1 gap-1">
+        <button
+          type="button"
+          onClick={() => handleChange("mock")}
+          className={`px-3 py-1 rounded-full transition text-[11px] ${
+            source === "mock"
+              ? "bg-cyan-400 text-slate-900 font-semibold shadow shadow-cyan-400/40"
+              : "text-cyan-200 hover:bg-slate-800"
+          }`}
+        >
+          Mock Data
+        </button>
+        <button
+          type="button"
+          onClick={() => handleChange("open-meteo")}
+          className={`px-3 py-1 rounded-full transition text-[11px] ${
+            source === "open-meteo"
+              ? "bg-cyan-400 text-slate-900 font-semibold shadow shadow-cyan-400/40"
+              : "text-cyan-200 hover:bg-slate-800"
+          }`}
+        >
+          Open-Meteo
+        </button>
       </div>
     </div>
   );
